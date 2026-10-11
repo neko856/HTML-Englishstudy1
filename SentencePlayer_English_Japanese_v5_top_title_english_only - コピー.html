@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentence Player v4.1 (3列対応)</title>
+<style>
+body{font-family:sans-serif;margin:16px;max-width:1200px}
+#eng{font-size:20px;font-weight:bold;margin-top:16px}
+#jp{font-size:16px;color:#0066cc;margin-top:12px}
+#jp2{font-size:16px;color:#cc6600;margin-top:8px}
+button,input,select{font-size:14px;padding:6px;margin:4px}
+#status{background:#f3f3f3;padding:8px;border-radius:6px;margin:8px 0}
+#voiceSelect{max-width:320px}
+#studyTop{border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:16px;background:#fff}
+#topControls{border-bottom:1px solid #ddd;padding-bottom:10px}
+#sentenceDisplay{margin-top:12px}
+#repeatRow{font-size:18px;margin:12px 0}
+#playControls{margin:8px 0}
+#playControls button{font-size:18px;padding:8px 12px}
+#eng{line-height:1.4}
+#jp,#jp2{line-height:1.5}
+#sentenceDisplay{margin-top:12px}
+#eng{line-height:1.4}
+#jp,#jp2{line-height:1.5}
+</style>
+</head>
+<body>
+<header id="topHeader" style="margin:0 0 14px;padding:8px 0;border-bottom:1px solid #ddd">
+  <h2>Sentence Player</h2>
+  <div style="margin:8px 0"><label for="folderInput" style="display:inline-block;padding:8px 12px;border:1px solid #888;border-radius:4px;cursor:pointer">ファイル選択</label> <input style="display:none" type="file" id="folderInput" webkitdirectory multiple></div>
+</header>
+
+<div id="studyTop">
+  <div id="topControls" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 12px">
+    <div>ジャンプ <input id="jumpInput" type="number" placeholder="番号" style="width:100px"><button id="jumpBtn">移動</button></div>
+    <div id="position" style="font-size:18px;font-weight:bold">No.0 / 0</div>
+  </div>
+  <div id="sentenceDisplay">
+    <div id="eng"></div><div id="jp"></div><div id="jp2"></div>
+  </div>
+  <p id="repeatRow">再生回数 <span id="repeatInfo">0/0</span></p>
+  <div id="playControls"><button id="prevBtn">◀前</button><button id="playBtn">▶再生</button><button id="stopBtn">■停止</button><button id="nextBtn">▶次</button></div>
+</div>
+
+<h3>Sentence Player v4.1 (3列対応)</h3>
+
+<div id="status">教材未読込</div>
+<div id="audioStatus" style="background:#f8f8f8;padding:8px;border-radius:6px;margin:8px 0">
+  音声：英語MP3・日本語MP3を同じフォルダから読み込みます。両方の音声ファイル名が同じ番号の場合は、別フォルダに分けてください。
+</div>
+<div>
+リピート <select id="repeatSelect"><option>1</option><option>3</option><option selected>5</option><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option><option value="9999">∞</option></select>
+速度 <select id="speedSelect"><option>0.5</option><option>0.7</option><option>0.8</option><option>0.9</option><option selected>1.0</option><option>1.2</option><option>1.5</option><option>2.0</option></select>
+再生方式 <select id="playMode"><option value="auto" selected>英語MP3／なければ読み上げ</option><option value="mp3">英語MP3のみ</option><option value="tts">英語読み上げ</option></select>
+日本語音声 <select id="jpMode"><option value="mp3" selected>MP3優先（なければ読み上げ）</option><option value="tts">日本語読み上げ</option><option value="off">再生しない</option></select>
+順序 <select id="sequenceMode"><option value="en-only">英語だけ</option><option value="en-jp">英語→日本語</option><option value="en-jp-en">英語→日本語→英語</option><option value="jp-en">日本語→英語</option></select>
+音声 <select id="voiceSelect"></select>
+<label><input type="checkbox" id="showJapanese" checked>日本語表示</label>
+</div>
+
+
+
+<audio id="audio"></audio>
+<script>
+let items=[],mp3Files={},jpMp3Files={},current=0,repeatCount=0,voices=[],sequenceParts=[],sequenceIndex=0,playToken=0;
+const audio=document.getElementById('audio');
+const statusEl=document.getElementById('status');
+const posEl=document.getElementById('position');
+const engEl=document.getElementById('eng');
+const jpEl=document.getElementById('jp');
+const jp2El=document.getElementById('jp2');
+function loadVoices(){voices=speechSynthesis.getVoices();const s=document.getElementById('voiceSelect');const old=s.value;s.innerHTML='';voices.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=`${v.name} (${v.lang})`;s.appendChild(o)});const e=voices.findIndex(v=>v.lang.startsWith('en'));if(e>=0)s.value=e;}
+loadVoices();speechSynthesis.onvoiceschanged=loadVoices;
+async function decodeTextFile(file){const b=await file.arrayBuffer();try{let t=new TextDecoder('utf-8').decode(b);if(t.includes(' '))throw new Error();return{text:t,enc:'UTF-8'};}catch(e){return{text:new TextDecoder('shift-jis').decode(b),enc:'Shift_JIS'};}}
+document.getElementById('folderInput').addEventListener('change',async(e)=>{
+ const files=[...e.target.files];
+ const textFile=files.find(f=>f.name.toLowerCase().endsWith('.tsv'))||files.find(f=>f.name.toLowerCase().endsWith('.txt'));
+ if(!textFile){alert('TSV/TXTが見つかりません');return;}
+ mp3Files={};jpMp3Files={};
+ // Files are grouped by folder path. Put English audio in an "en" or "english" folder,
+ // Japanese audio in a "jp" or "japanese" folder, or use *_en.mp3 / *_jp.mp3 suffixes.
+ const audioFiles=files.filter(f=>f.name.toLowerCase().endsWith('.mp3'));
+ const folderOf=f=>(f.webkitRelativePath||f.name).split('/').slice(-2,-1)[0]?.toLowerCase()||'';
+ for(const f of audioFiles){
+   const name=f.name.toLowerCase();
+   const folder=folderOf(f);
+   const isJP=/(^|[_-])(jp|ja|japanese|日本語)(?=\.)/i.test(name)||/(^|[_-])(jp|ja|japanese|日本語)$/.test(folder);
+   const isEN=/(^|[_-])(en|eng|english|英語)(?=\.)/i.test(name)||/(^|[_-])(en|eng|english|英語)$/.test(folder);
+   const key=name.replace(/([_-])(jp|ja|japanese|日本語|en|eng|english|英語)(?=\.mp3$)/i,'').replace(/\.mp3$/i,'');
+   if(isJP) jpMp3Files[key]=f;
+   else if(isEN) mp3Files[key]=f;
+   else mp3Files[key]=f;
+ }
+ const decoded=await decodeTextFile(textFile);items=[];
+ let prevJp2='';
+ decoded.text.split(/\r?\n/).forEach(line=>{
+   if(!line.trim()) return;
+   if(line.includes('\t')){
+     const c=line.split('\t');let jp2=(c[2]||'').trim();
+     if(!jp2) jp2=prevJp2; else prevJp2=jp2;
+     items.push({eng:c[0]||'',jp:c[1]||'',jp2});
+   }else items.push({eng:line,jp:'',jp2:prevJp2});
+ });
+ statusEl.textContent=`${textFile.name} | 行数:${items.length} | 英語MP3:${Object.keys(mp3Files).length} | 日本語MP3:${Object.keys(jpMp3Files).length} | 文字コード:${decoded.enc}`;
+ document.getElementById('audioStatus').textContent='英語・日本語はそれぞれMP3があれば再生し、MP3がない場合は読み上げます（英語は「英語MP3のみ」を選ぶと例外）。音声ファイルは en / jp の別フォルダに分けてください。';
+ current=0;showItem();
+});
+function showItem(){if(!items.length)return;posEl.textContent=`No.${current+1} / ${items.length}`;engEl.textContent=items[current].eng;if(document.getElementById('showJapanese').checked){jpEl.textContent=items[current].jp;jp2El.textContent=items[current].jp2||'';}else{jpEl.textContent='';jp2El.textContent='';}}
+document.getElementById('showJapanese').addEventListener('change',showItem);
+function numberedKey(i){
+ const n=i+1;
+ return [`${n}`,String(n).padStart(2,'0'),String(n).padStart(3,'0'),String(n).padStart(4,'0')];
+}
+function findInMap(map,i){
+ const keys=numberedKey(i);
+ for(const k of keys){if(map[k]) return URL.createObjectURL(map[k]);}
+ // Also tolerate numbered filenames with language suffixes.
+ for(const k of keys){for(const suffix of ['_en','-en','_eng','-eng','_english','-english','_jp','-jp','_ja','-ja','_japanese','-japanese']) if(map[k+suffix]) return URL.createObjectURL(map[k+suffix]);}
+ return null;
+}
+function findMp3(i){return findInMap(mp3Files,i);}
+function findJpMp3(i){return findInMap(jpMp3Files,i);}
+function updateRepeat(max){document.getElementById('repeatInfo').textContent=`${repeatCount}/${max===9999?'∞':max}`;}
+function stopAll(){playToken++;audio.pause();audio.currentTime=0;speechSynthesis.cancel();}
+function buildSequence(){
+ const seq=document.getElementById('sequenceMode').value;
+ sequenceParts=seq==='en-only'?['en']:seq==='en-jp-en'?['en','jp','en']:seq==='jp-en'?['jp','en']:['en','jp'];
+ sequenceParts=sequenceParts.filter(part=>part!=='jp'||document.getElementById('jpMode').value!=='off');
+ sequenceIndex=0;
+}
+function playPart(part,token){
+ if(token!==playToken||!items.length)return;
+ const isJP=part==='jp';
+ const text=isJP?(items[current].jp||items[current].jp2||''):items[current].eng;
+ if(!text.trim()){finishPart(token);return;}
+ const mode=isJP?document.getElementById('jpMode').value:document.getElementById('playMode').value;
+ const src=isJP?findJpMp3(current):findMp3(current);
+ if(mode==='off'){finishPart(token);return;}
+ // Japanese defaults to text-to-speech automatically when its MP3 is missing.
+ if(mode!=='tts'&&src){
+   audio.src=src;audio.playbackRate=Number(document.getElementById('speedSelect').value);
+   audio.onended=()=>finishPart(token);
+   audio.onerror=()=>{if(token===playToken)finishPart(token);};
+   audio.play().catch(()=>finishPart(token));
+   return;
+ }
+ if(!isJP&&mode==='mp3'&&!src){alert('英語 MP3が見つかりません：'+String(current+1));finishPart(token);return;}
+ const utterance=new SpeechSynthesisUtterance(text);
+ const selectedVoice=voices[Number(document.getElementById('voiceSelect').value)];
+ const languageVoice=isJP?voices.find(v=>v.lang.toLowerCase().startsWith('ja')):selectedVoice;
+ if(languageVoice){utterance.voice=languageVoice;utterance.lang=languageVoice.lang;}
+ else {utterance.lang=isJP?'ja-JP':(selectedVoice?.lang||'en-US');}
+ utterance.rate=Number(document.getElementById('speedSelect').value);
+ utterance.onend=()=>finishPart(token);
+ utterance.onerror=()=>finishPart(token);
+ speechSynthesis.speak(utterance);
+}
+function finishPart(token){
+ if(token!==playToken)return;
+ sequenceIndex++;
+ if(sequenceIndex<sequenceParts.length){playPart(sequenceParts[sequenceIndex],token);return;}
+ const max=Number(document.getElementById('repeatSelect').value);
+ repeatCount++;updateRepeat(max);
+ if(repeatCount<max){sequenceIndex=0;playPart(sequenceParts[sequenceIndex],token);return;}
+ repeatCount=0;updateRepeat(max);
+ current=(current+1)%items.length;showItem();
+ buildSequence();playPart(sequenceParts[0],token);
+}
+function playCurrent(){
+ if(!items.length)return;
+ stopAll();repeatCount=0;updateRepeat(Number(document.getElementById('repeatSelect').value));
+ buildSequence();playPart(sequenceParts[0],playToken);
+}
+document.getElementById('playBtn').onclick=playCurrent;
+document.getElementById('stopBtn').onclick=stopAll;
+document.getElementById('nextBtn').onclick=()=>{stopAll();if(items.length){current=(current+1)%items.length;showItem();}};
+document.getElementById('prevBtn').onclick=()=>{stopAll();if(items.length){current=Math.max(0,current-1);showItem();}};
+document.getElementById('jumpBtn').onclick=()=>{stopAll();const n=Number(document.getElementById('jumpInput').value);if(n>=1&&n<=items.length){current=n-1;showItem();}};
+</script></body></html>
