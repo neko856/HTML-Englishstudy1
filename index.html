@@ -17,12 +17,21 @@ button,input,select{font-size:14px;padding:6px;margin:4px}
 #sentenceDisplay{margin-top:12px}
 #repeatRow{font-size:18px;margin:12px 0}
 #playControls{margin:8px 0}
+#rangeControls{border-top:1px solid #ddd;margin-top:10px;padding-top:10px;display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+#rangeControls input[type=number]{width:76px}
 #playControls button{font-size:18px;padding:8px 12px}
 #eng{line-height:1.4}
 #jp,#jp2{line-height:1.5}
 #sentenceDisplay{margin-top:12px}
 #eng{line-height:1.4}
 #jp,#jp2{line-height:1.5}
+.editable-text{cursor:pointer;border-radius:4px;padding:2px;min-height:1em}
+.editable-text:active,.editable-text:hover{background:#f5f8ff;outline:1px dashed #9ab}
+.edit-hint{font-size:12px;color:#666;margin-top:8px}
+.inline-editor{width:100%;box-sizing:border-box;font:inherit;line-height:1.5;padding:8px;margin:6px 0}
+.edit-actions button{font-size:14px;padding:6px 12px}
+#saveEditedBtn,#overwriteBtn,#chooseOverwriteBtn{font-size:15px;padding:8px 12px;margin:8px 4px 8px 0}
+#saveHelp{font-size:12px;color:#555;margin:4px 0 10px}
 </style>
 </head>
 <body>
@@ -35,9 +44,10 @@ button,input,select{font-size:14px;padding:6px;margin:4px}
   <div id="topControls" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 12px">
     <div>ジャンプ <input id="jumpInput" type="number" placeholder="番号" style="width:100px"><button id="jumpBtn">移動</button></div>
     <div id="position" style="font-size:18px;font-weight:bold">No.0 / 0</div>
+    <div id="rangeControls"><label><input type="checkbox" id="rangeEnabled"> 範囲リピート</label><label>開始No. <input id="rangeStart" type="number" min="1" value="1"></label><label>終了No. <input id="rangeEnd" type="number" min="1" value="10"></label><button id="applyRangeBtn" type="button">範囲を設定</button><span id="rangeInfo" style="font-size:13px;color:#42624a">全範囲で再生</span></div>
   </div>
   <div id="sentenceDisplay">
-    <div id="eng"></div><div id="jp"></div><div id="jp2"></div>
+    <div id="eng" class="editable-text" data-field="eng" title="クリックして編集"></div><div id="jp" class="editable-text" data-field="jp" title="クリックして編集"></div><div id="jp2" class="editable-text" data-field="jp2" title="クリックして編集"></div><div class="edit-hint">英文・日本語文をクリックすると、その文だけ編集できます。</div>
   </div>
   <p id="repeatRow">再生回数 <span id="repeatInfo">0/0</span></p>
   <div id="playControls"><button id="prevBtn">◀前</button><button id="playBtn">▶再生</button><button id="stopBtn">■停止</button><button id="nextBtn">▶次</button></div>
@@ -45,7 +55,9 @@ button,input,select{font-size:14px;padding:6px;margin:4px}
 
 <h3>Sentence Player v4.1 (3列対応)</h3>
 
-<div id="status">教材未読込</div>
+<div id="resumeInfo" style="font-size:0.9em;color:#42624a;margin:6px 0;">学習位置は自動保存されます</div><div id="status">教材未読込</div>
+<button id="saveEditedBtn" type="button">別ファイルとして保存</button> <button id="chooseOverwriteBtn" type="button">上書きする元ファイルを選択</button> <button id="overwriteBtn" type="button">上書き保存</button>
+<div id="saveHelp">「別ファイルとして保存」は元ファイルを残してTSVをダウンロードします。上書き保存する場合は、先に「上書きする元ファイルを選択」で読み込んだ教材ファイルを選んでください。</div>
 <div id="audioStatus" style="background:#f8f8f8;padding:8px;border-radius:6px;margin:8px 0">
   音声：英語MP3・日本語MP3を同じフォルダから読み込みます。両方の音声ファイル名が同じ番号の場合は、別フォルダに分けてください。
 </div>
@@ -63,7 +75,7 @@ button,input,select{font-size:14px;padding:6px;margin:4px}
 
 <audio id="audio"></audio>
 <script>
-let items=[],mp3Files={},jpMp3Files={},current=0,repeatCount=0,voices=[],sequenceParts=[],sequenceIndex=0,playToken=0;
+let items=[],mp3Files={},jpMp3Files={},current=0,repeatCount=0,voices=[],sequenceParts=[],sequenceIndex=0,playToken=0,editingField=null,sourceTextName='SentencePlayer_edited.tsv',loadedTextName='',overwriteHandle=null;
 const audio=document.getElementById('audio');
 const statusEl=document.getElementById('status');
 const posEl=document.getElementById('position');
@@ -92,7 +104,7 @@ document.getElementById('folderInput').addEventListener('change',async(e)=>{
    else if(isEN) mp3Files[key]=f;
    else mp3Files[key]=f;
  }
- const decoded=await decodeTextFile(textFile);items=[];
+ const decoded=await decodeTextFile(textFile);loadedTextName=textFile.name;sourceTextName=textFile.name.replace(/\.(tsv|txt)$/i,'')+'_edited.tsv';overwriteHandle=null;document.getElementById('saveHelp').textContent='読み込んだ教材：'+loadedTextName+'。上書き保存する場合は「上書きする元ファイルを選択」で同じファイルを指定してください。';items=[];
  let prevJp2='';
  decoded.text.split(/\r?\n/).forEach(line=>{
    if(!line.trim()) return;
@@ -104,10 +116,95 @@ document.getElementById('folderInput').addEventListener('change',async(e)=>{
  });
  statusEl.textContent=`${textFile.name} | 行数:${items.length} | 英語MP3:${Object.keys(mp3Files).length} | 日本語MP3:${Object.keys(jpMp3Files).length} | 文字コード:${decoded.enc}`;
  document.getElementById('audioStatus').textContent='英語・日本語はそれぞれMP3があれば再生し、MP3がない場合は読み上げます（英語は「英語MP3のみ」を選ぶと例外）。音声ファイルは en / jp の別フォルダに分けてください。';
- current=0;showItem();
+ // 教材ごとに前回のNo.を保存・復元（同じブラウザ内）
+ const resumeKey='sentencePlayer:lastNo:'+textFile.name;
+ let savedNo=1;
+ try { savedNo=Number(localStorage.getItem(resumeKey))||1; } catch(e) {}
+ current=Math.min(Math.max(savedNo-1,0),Math.max(items.length-1,0));
+ const resumeInfo=document.getElementById('resumeInfo');
+ if(resumeInfo) resumeInfo.textContent=savedNo>1 ? `前回の学習位置：No.${current+1}（自動復元）` : '学習位置は自動保存されます';
+ try {const r=JSON.parse(localStorage.getItem('sentencePlayer:range:'+textFile.name)||localStorage.getItem('sentencePlayer:range:default')||'null');if(r){document.getElementById('rangeStart').value=r.start||1;document.getElementById('rangeEnd').value=Math.min(Number(r.end)||items.length,items.length);document.getElementById('rangeEnabled').checked=!!r.enabled;}} catch(e){}
+ if(Number(document.getElementById('rangeEnd').value)>items.length) document.getElementById('rangeEnd').value=items.length;
+ if(rangeActive()){const rg=getRange();if(current<rg.start||current>rg.end)current=rg.start;}
+ document.getElementById('rangeInfo').textContent=rangeActive()?`No.${document.getElementById('rangeStart').value}～No.${document.getElementById('rangeEnd').value}を繰り返し（設定は自動保存）`:'全範囲で再生（設定は自動保存）';
+ showItem();
 });
-function showItem(){if(!items.length)return;posEl.textContent=`No.${current+1} / ${items.length}`;engEl.textContent=items[current].eng;if(document.getElementById('showJapanese').checked){jpEl.textContent=items[current].jp;jp2El.textContent=items[current].jp2||'';}else{jpEl.textContent='';jp2El.textContent='';}}
+function showItem(){
+ if(!items.length)return;
+ // 文を切り替えたときは編集画面を閉じ、通常表示に戻す
+ closeInlineEditor(false);
+ posEl.textContent=`No.${current+1} / ${items.length}`;
+ try {
+   if(loadedTextName) localStorage.setItem('sentencePlayer:lastNo:'+loadedTextName,String(current+1));
+   const resumeInfo=document.getElementById('resumeInfo');
+   if(resumeInfo) resumeInfo.textContent=`今回の学習位置：No.${current+1}（自動保存済み）`;
+ } catch(e) {
+   const resumeInfo=document.getElementById('resumeInfo');
+   if(resumeInfo) resumeInfo.textContent='このブラウザでは自動保存できません';
+ }
+ engEl.textContent=items[current].eng;
+ if(document.getElementById('showJapanese').checked){jpEl.textContent=items[current].jp;jp2El.textContent=items[current].jp2||'';}
+ else{jpEl.textContent='';jp2El.textContent='';}
+}
+function closeInlineEditor(save){
+ if(!editingField)return;
+ const {field,element,textarea}=editingField;
+ if(save && items[current]) {
+   items[current][field]=textarea.value;
+   statusEl.textContent += ' | 編集内容あり（元ファイルは未変更）';
+ }
+ editingField=null;
+ showItemDisplayOnly();
+}
+function showItemDisplayOnly(){
+ if(!items.length)return;
+ engEl.textContent=items[current].eng;
+ if(document.getElementById('showJapanese').checked){jpEl.textContent=items[current].jp;jp2El.textContent=items[current].jp2||'';}
+ else{jpEl.textContent='';jp2El.textContent='';}
+}
+function startInlineEdit(element){
+ if(!items.length || editingField)return;
+ const field=element.dataset.field;
+ if(field!=='eng' && !document.getElementById('showJapanese').checked)return;
+ const original=items[current][field]||'';
+ const wrap=document.createElement('div');
+ const textarea=document.createElement('textarea');
+ textarea.className='inline-editor';textarea.rows=Math.max(2,Math.min(6,Math.ceil(original.length/45)));
+ textarea.value=original;textarea.setAttribute('aria-label','選択した文を編集');
+ const actions=document.createElement('div');actions.className='edit-actions';
+ const save=document.createElement('button');save.textContent='保存';
+ const cancel=document.createElement('button');cancel.textContent='キャンセル';
+ actions.append(save,cancel);wrap.append(textarea,actions);
+ element.replaceChildren(wrap);
+ editingField={field,element,textarea};
+ save.onclick=()=>closeInlineEditor(true);
+ cancel.onclick=()=>closeInlineEditor(false);
+ textarea.focus();textarea.setSelectionRange(textarea.value.length,textarea.value.length);
+}
+[engEl,jpEl,jp2El].forEach(el=>el.addEventListener('click',()=>startInlineEdit(el)));
 document.getElementById('showJapanese').addEventListener('change',showItem);
+document.getElementById('saveEditedBtn').addEventListener('click',()=>{
+ if(editingField) closeInlineEditor(true);
+ if(!items.length){alert('先にTSV/TXT教材を読み込んでください。');return;}
+ const content=items.map(item=>[item.eng||'',item.jp||'',item.jp2||''].join('\t')).join('\r\n')+'\r\n';
+ const blob=new Blob(['\ufeff',content],{type:'text/tab-separated-values;charset=utf-8'});
+ const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=sourceTextName;a.style.display='none';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ statusEl.textContent=statusEl.textContent.replace(/ \| 編集内容あり（元ファイルは未変更）/g,'')+' | 編集内容をTSV保存';
+});
+document.getElementById('chooseOverwriteBtn').addEventListener('click',async()=>{
+ if(!items.length){alert('先にTSV/TXT教材を読み込んでください。');return;}
+ if(!('showOpenFilePicker' in window)){alert('このブラウザでは直接上書き保存に対応していません。EdgeまたはChromeの最新版で開いてください。');return;}
+ try{const handles=await window.showOpenFilePicker({multiple:false,types:[{description:'TSV / TXT教材',accept:{'text/plain':['.tsv','.txt']}}]});const h=handles[0];if(h.name!==loadedTextName){alert('選択したファイル名が読み込んだ教材と異なります。\n読み込んだファイル：'+loadedTextName+'\n選択したファイル：'+h.name);overwriteHandle=null;return;}overwriteHandle=h;document.getElementById('saveHelp').textContent='上書き対象：'+h.name+'。内容を確認して「上書き保存」を押してください。';}catch(err){if(err.name!=='AbortError')alert('ファイルを選択できませんでした：'+err.message);}
+});
+document.getElementById('overwriteBtn').addEventListener('click',async()=>{
+ if(editingField) closeInlineEditor(true);
+ if(!items.length){alert('先にTSV/TXT教材を読み込んでください。');return;}
+ if(!overwriteHandle){alert('先に「上書きする元ファイルを選択」を押し、読み込んだ教材と同じファイルを選んでください。');return;}
+ if(!confirm('「'+overwriteHandle.name+'」を編集内容で上書きします。\n元の内容は失われます。続けますか？'))return;
+ try{if((await overwriteHandle.queryPermission({mode:'readwrite'}))!=='granted'){const permission=await overwriteHandle.requestPermission({mode:'readwrite'});if(permission!=='granted'){alert('書き込み許可が得られませんでした。');return;}}
+ const content=items.map(item=>[item.eng||'',item.jp||'',item.jp2||''].join('\t')).join('\r\n')+'\r\n';const writable=await overwriteHandle.createWritable();await writable.write(new Blob(['\ufeff',content],{type:'text/tab-separated-values;charset=utf-8'}));await writable.close();statusEl.textContent=statusEl.textContent.replace(/ \| 編集内容あり（元ファイルは未変更）/g,'')+' | '+overwriteHandle.name+' に上書き保存しました';alert('上書き保存しました。');
+ }catch(err){alert('上書き保存に失敗しました：'+err.message+'\n「別ファイルとして保存」も利用できます。');}
+});
 function numberedKey(i){
  const n=i+1;
  return [`${n}`,String(n).padStart(2,'0'),String(n).padStart(3,'0'),String(n).padStart(4,'0')];
@@ -122,6 +219,35 @@ function findInMap(map,i){
 function findMp3(i){return findInMap(mp3Files,i);}
 function findJpMp3(i){return findInMap(jpMp3Files,i);}
 function updateRepeat(max){document.getElementById('repeatInfo').textContent=`${repeatCount}/${max===9999?'∞':max}`;}
+function rangeActive(){return document.getElementById('rangeEnabled').checked && items.length>0;}
+function saveRangeSettings(start,end,enabled){
+ const data=JSON.stringify({enabled:!!enabled,start:Number(start),end:Number(end)});
+ try{localStorage.setItem('sentencePlayer:range:default',data);if(loadedTextName)localStorage.setItem('sentencePlayer:range:'+loadedTextName,data);}catch(e){const info=document.getElementById('rangeInfo');if(info)info.textContent='設定を保存できませんでした（ブラウザの保存設定を確認）';}
+}
+function autoSaveRangeSettings(){
+ if(!items.length)return;
+ const a=Number(document.getElementById('rangeStart').value),b=Number(document.getElementById('rangeEnd').value);
+ if(Number.isInteger(a)&&Number.isInteger(b)&&a>=1&&b>=a&&b<=items.length)saveRangeSettings(a,b,rangeActive());
+}
+function getRange(){
+ let start=Number(document.getElementById('rangeStart').value)||1;
+ let end=Number(document.getElementById('rangeEnd').value)||items.length;
+ start=Math.max(1,Math.min(items.length,start)); end=Math.max(1,Math.min(items.length,end));
+ return {start:start-1,end:end-1};
+}
+function applyRange(){
+ if(!items.length){document.getElementById('rangeInfo').textContent='教材を読み込んでください';return;}
+ let a=Number(document.getElementById('rangeStart').value),b=Number(document.getElementById('rangeEnd').value);
+ if(!Number.isInteger(a)||!Number.isInteger(b)||a<1||b<a||b>items.length){alert(`開始No.と終了No.を1～${items.length}の範囲で設定してください（開始No.は終了No.以下）。`);return;}
+ saveRangeSettings(a,b,rangeActive());
+ document.getElementById('rangeInfo').textContent=rangeActive()?`No.${a}～No.${b}を繰り返し（設定は自動保存）`: '全範囲で再生（設定は自動保存）';
+ if(rangeActive()) {const {start,end}=getRange();if(current<start||current>end){stopAll();current=start;showItem();}}
+}
+function advanceIndex(direction){
+ if(!items.length)return;
+ if(rangeActive()) {const {start,end}=getRange(); if(direction>0) current=current>=end?start:current+1; else current=current<=start?end:current-1;}
+ else {current=(current+direction+items.length)%items.length;}
+}
 function stopAll(){playToken++;audio.pause();audio.currentTime=0;speechSynthesis.cancel();}
 function buildSequence(){
  const seq=document.getElementById('sequenceMode').value;
@@ -164,7 +290,7 @@ function finishPart(token){
  repeatCount++;updateRepeat(max);
  if(repeatCount<max){sequenceIndex=0;playPart(sequenceParts[sequenceIndex],token);return;}
  repeatCount=0;updateRepeat(max);
- current=(current+1)%items.length;showItem();
+ advanceIndex(1);showItem();
  buildSequence();playPart(sequenceParts[0],token);
 }
 function playCurrent(){
@@ -174,7 +300,12 @@ function playCurrent(){
 }
 document.getElementById('playBtn').onclick=playCurrent;
 document.getElementById('stopBtn').onclick=stopAll;
-document.getElementById('nextBtn').onclick=()=>{stopAll();if(items.length){current=(current+1)%items.length;showItem();}};
-document.getElementById('prevBtn').onclick=()=>{stopAll();if(items.length){current=Math.max(0,current-1);showItem();}};
+document.getElementById('nextBtn').onclick=()=>{if(items.length){const wasPlaying=!!(audio.src&&!audio.paused)||speechSynthesis.speaking;stopAll();advanceIndex(1);showItem();if(wasPlaying){playCurrent();}}};
+document.getElementById('prevBtn').onclick=()=>{if(items.length){const wasPlaying=!!(audio.src&&!audio.paused)||speechSynthesis.speaking;stopAll();advanceIndex(-1);showItem();if(wasPlaying){playCurrent();}}};
 document.getElementById('jumpBtn').onclick=()=>{stopAll();const n=Number(document.getElementById('jumpInput').value);if(n>=1&&n<=items.length){current=n-1;showItem();}};
+document.getElementById('applyRangeBtn').onclick=applyRange;
+document.getElementById('rangeEnabled').addEventListener('change',applyRange);
+document.getElementById('rangeStart').addEventListener('change',autoSaveRangeSettings);
+document.getElementById('rangeEnd').addEventListener('change',autoSaveRangeSettings);
+
 </script></body></html>
