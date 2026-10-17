@@ -5,7 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sentence Player v4.1 (3列対応)</title>
 <style>
-body{font-family:sans-serif;margin:16px;max-width:1200px}
+body{font-family:sans-serif;margin:12px;max-width:1200px}
+#topHeader{margin-bottom:8px!important;padding:3px 0!important}
+#topHeader h2{font-size:19px;margin:4px 0}
+#topHeader label{font-size:12px!important;padding:5px 8px!important}
+#studyTop{padding:8px;margin-bottom:12px}
+#topControls{font-size:12px;gap:3px!important;margin:4px 0 7px!important;padding-bottom:6px}
+#topControls input,#topControls button{font-size:12px;padding:3px;margin:2px}
+#topControls #jumpInput{width:65px!important}
+#position{font-size:15px!important}
+#rangeControls{font-size:12px;margin-top:5px;padding-top:5px;gap:2px}
+#rangeControls input[type=number]{width:55px;padding:3px}
+#rangeInfo{font-size:11px!important}
 #eng{font-size:20px;font-weight:bold;margin-top:16px}
 #jp{font-size:16px;color:#0066cc;margin-top:12px}
 #jp2{font-size:16px;color:#cc6600;margin-top:8px}
@@ -19,7 +30,12 @@ button,input,select{font-size:14px;padding:6px;margin:4px}
 #playControls{margin:8px 0}
 #rangeControls{border-top:1px solid #ddd;margin-top:10px;padding-top:10px;display:flex;flex-wrap:wrap;align-items:center;gap:4px}
 #rangeControls input[type=number]{width:76px}
-#playControls button{font-size:18px;padding:8px 12px}
+#playSettings{display:flex;flex-wrap:wrap;align-items:center;gap:3px;margin-top:6px;padding-top:6px;border-top:1px solid #eee;font-size:12px}
+#playSettings label{white-space:nowrap}
+#playSettings select{font-size:12px;padding:3px;margin:2px;max-width:210px}
+#playSettings input[type=checkbox]{margin:3px}
+#playControls{margin:5px 0}
+#playControls button{font-size:15px;padding:5px 8px;margin:2px}
 #eng{line-height:1.4}
 #jp,#jp2{line-height:1.5}
 #sentenceDisplay{margin-top:12px}
@@ -44,13 +60,22 @@ button,input,select{font-size:14px;padding:6px;margin:4px}
   <div id="topControls" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 12px">
     <div>ジャンプ <input id="jumpInput" type="number" placeholder="番号" style="width:100px"><button id="jumpBtn">移動</button></div>
     <div id="position" style="font-size:18px;font-weight:bold">No.0 / 0</div>
-    <div id="rangeControls"><label><input type="checkbox" id="rangeEnabled"> 範囲リピート</label><label>開始No. <input id="rangeStart" type="number" min="1" value="1"></label><label>終了No. <input id="rangeEnd" type="number" min="1" value="10"></label><button id="applyRangeBtn" type="button">範囲を設定</button><span id="rangeInfo" style="font-size:13px;color:#42624a">全範囲で再生</span></div>
   </div>
+  <div id="playControls"><button id="prevBtn">◀前</button><button id="playBtn">▶再生</button><button id="stopBtn">■停止</button><button id="nextBtn">▶次</button></div>
   <div id="sentenceDisplay">
     <div id="eng" class="editable-text" data-field="eng" title="クリックして編集"></div><div id="jp" class="editable-text" data-field="jp" title="クリックして編集"></div><div id="jp2" class="editable-text" data-field="jp2" title="クリックして編集"></div><div class="edit-hint">英文・日本語文をクリックすると、その文だけ編集できます。</div>
   </div>
   <p id="repeatRow">再生回数 <span id="repeatInfo">0/0</span></p>
-  <div id="playControls"><button id="prevBtn">◀前</button><button id="playBtn">▶再生</button><button id="stopBtn">■停止</button><button id="nextBtn">▶次</button></div>
+    <div id="rangeControls"><label><input type="checkbox" id="rangeEnabled"> 範囲リピート</label><label>開始No. <input id="rangeStart" type="number" min="1" value="1"></label><label>終了No. <input id="rangeEnd" type="number" min="1" value="10"></label><button id="applyRangeBtn" type="button">範囲を設定</button><span id="rangeInfo" style="font-size:13px;color:#42624a">全範囲で再生</span></div>
+  <div id="playSettings">
+    <label>リピート <select id="repeatSelect"><option>1</option><option>3</option><option selected>5</option><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option><option value="9999">∞</option></select></label>
+    <label>速度 <select id="speedSelect"><option>0.5</option><option>0.7</option><option>0.8</option><option>0.9</option><option selected>1.0</option><option>1.2</option><option>1.5</option><option>2.0</option></select></label>
+    <label>再生方式 <select id="playMode"><option value="auto" selected>英語MP3／なければ読み上げ</option><option value="mp3">英語MP3のみ</option><option value="tts">英語読み上げ</option></select></label>
+    <label>日本語音声 <select id="jpMode"><option value="mp3" selected>MP3優先（なければ読み上げ）</option><option value="tts">日本語読み上げ</option><option value="off">再生しない</option></select></label>
+    <label>順序 <select id="sequenceMode"><option value="en-only">英語だけ</option><option value="en-jp">英語→日本語</option><option value="en-jp-en">英語→日本語→英語</option><option value="jp-en">日本語→英語</option></select></label>
+    <label>音声 <select id="voiceSelect"></select></label>
+    <label><input type="checkbox" id="showJapanese" checked>日本語表示</label>
+  </div>
 </div>
 
 <h3>Sentence Player v4.1 (3列対応)</h3>
@@ -60,15 +85,6 @@ button,input,select{font-size:14px;padding:6px;margin:4px}
 <div id="saveHelp">「別ファイルとして保存」は元ファイルを残してTSVをダウンロードします。上書き保存する場合は、先に「上書きする元ファイルを選択」で読み込んだ教材ファイルを選んでください。</div>
 <div id="audioStatus" style="background:#f8f8f8;padding:8px;border-radius:6px;margin:8px 0">
   音声：英語MP3・日本語MP3を同じフォルダから読み込みます。両方の音声ファイル名が同じ番号の場合は、別フォルダに分けてください。
-</div>
-<div>
-リピート <select id="repeatSelect"><option>1</option><option>3</option><option selected>5</option><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option><option value="9999">∞</option></select>
-速度 <select id="speedSelect"><option>0.5</option><option>0.7</option><option>0.8</option><option>0.9</option><option selected>1.0</option><option>1.2</option><option>1.5</option><option>2.0</option></select>
-再生方式 <select id="playMode"><option value="auto" selected>英語MP3／なければ読み上げ</option><option value="mp3">英語MP3のみ</option><option value="tts">英語読み上げ</option></select>
-日本語音声 <select id="jpMode"><option value="mp3" selected>MP3優先（なければ読み上げ）</option><option value="tts">日本語読み上げ</option><option value="off">再生しない</option></select>
-順序 <select id="sequenceMode"><option value="en-only">英語だけ</option><option value="en-jp">英語→日本語</option><option value="en-jp-en">英語→日本語→英語</option><option value="jp-en">日本語→英語</option></select>
-音声 <select id="voiceSelect"></select>
-<label><input type="checkbox" id="showJapanese" checked>日本語表示</label>
 </div>
 
 
