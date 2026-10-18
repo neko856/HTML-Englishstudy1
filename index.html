@@ -82,7 +82,7 @@ button,input,select{font-size:14px;padding:6px;margin:4px}
 
 <div id="resumeInfo" style="font-size:0.9em;color:#42624a;margin:6px 0;">学習位置は自動保存されます</div><div id="status">教材未読込</div>
 <button id="saveEditedBtn" type="button">別ファイルとして保存</button> <button id="chooseOverwriteBtn" type="button">上書きする元ファイルを選択</button> <button id="overwriteBtn" type="button">上書き保存</button>
-<div id="saveHelp">「別ファイルとして保存」は元ファイルを残してTSVをダウンロードします。上書き保存する場合は、先に「上書きする元ファイルを選択」で読み込んだ教材ファイルを選んでください。</div>
+<div id="saveHelp">「別ファイルとして保存」はUTF-8（BOM付き）のTSVをダウンロードします。上書き保存もUTF-8（BOM付き）になります。元ファイルがShift_JISの場合、元の文字コードには戻さずUTF-8に変換して保存します。</div>
 <div id="audioStatus" style="background:#f8f8f8;padding:8px;border-radius:6px;margin:8px 0">
   音声：英語MP3・日本語MP3を同じフォルダから読み込みます。両方の音声ファイル名が同じ番号の場合は、別フォルダに分けてください。
 </div>
@@ -100,7 +100,22 @@ const jpEl=document.getElementById('jp');
 const jp2El=document.getElementById('jp2');
 function loadVoices(){voices=speechSynthesis.getVoices();const s=document.getElementById('voiceSelect');const old=s.value;s.innerHTML='';voices.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=`${v.name} (${v.lang})`;s.appendChild(o)});const e=voices.findIndex(v=>v.lang.startsWith('en'));if(e>=0)s.value=e;}
 loadVoices();speechSynthesis.onvoiceschanged=loadVoices;
-async function decodeTextFile(file){const b=await file.arrayBuffer();try{let t=new TextDecoder('utf-8').decode(b);if(t.includes(' '))throw new Error();return{text:t,enc:'UTF-8'};}catch(e){return{text:new TextDecoder('shift-jis').decode(b),enc:'Shift_JIS'};}}
+async function decodeTextFile(file){
+  const b=await file.arrayBuffer();
+  // UTF-8は「空白があるか」ではなく、バイト列が正しいUTF-8かで判定する。
+  // 英文にスペースが含まれるだけでShift_JIS扱いになる不具合を修正。
+  try {
+    const t=new TextDecoder('utf-8',{fatal:true}).decode(b);
+    return {text:t.replace(/^\\uFEFF/,''),enc:'UTF-8'};
+  } catch(e) {
+    try {
+      return {text:new TextDecoder('shift-jis').decode(b),enc:'Shift_JIS'};
+    } catch(e2) {
+      alert('文字コードを判定できませんでした。UTF-8またはShift_JISのTXT/TSVを選んでください。');
+      throw e2;
+    }
+  }
+}
 document.getElementById('folderInput').addEventListener('change',async(e)=>{
  const files=[...e.target.files];
  const textFile=files.find(f=>f.name.toLowerCase().endsWith('.tsv'))||files.find(f=>f.name.toLowerCase().endsWith('.txt'));
@@ -209,8 +224,35 @@ document.getElementById('saveEditedBtn').addEventListener('click',()=>{
 });
 document.getElementById('chooseOverwriteBtn').addEventListener('click',async()=>{
  if(!items.length){alert('先にTSV/TXT教材を読み込んでください。');return;}
- if(!('showOpenFilePicker' in window)){alert('このブラウザでは直接上書き保存に対応していません。EdgeまたはChromeの最新版で開いてください。');return;}
- try{const handles=await window.showOpenFilePicker({multiple:false,types:[{description:'TSV / TXT教材',accept:{'text/plain':['.tsv','.txt']}}]});const h=handles[0];if(h.name!==loadedTextName){alert('選択したファイル名が読み込んだ教材と異なります。\n読み込んだファイル：'+loadedTextName+'\n選択したファイル：'+h.name);overwriteHandle=null;return;}overwriteHandle=h;document.getElementById('saveHelp').textContent='上書き対象：'+h.name+'。内容を確認して「上書き保存」を押してください。';}catch(err){if(err.name!=='AbortError')alert('ファイルを選択できませんでした：'+err.message);}
+ if(!('showOpenFilePicker' in window)){
+   alert('このブラウザでは直接上書き保存に対応していません。ダウンロードした修正版HTMLを、最新版のEdgeまたはChromeで開いてください。');
+   return;
+ }
+ try{
+   // .tsv と .txt を別々のMIMEタイプとして指定し、Windowsの選択画面で
+   // ファイルが選択できない場合を避ける。
+   const handles=await window.showOpenFilePicker({
+     multiple:false,
+     excludeAcceptAllOption:false,
+     types:[
+       {description:'TSV教材',accept:{'text/tab-separated-values':['.tsv']}},
+       {description:'TXT教材',accept:{'text/plain':['.txt']}}
+     ]
+   });
+   if(!handles || !handles.length)return;
+   const h=handles[0];
+   // ファイル選択画面のフィルターでTSV/TXTを指定しているため、
+   // ブラウザが返す名前の形式に依存した拡張子チェックは行わない。
+   if(h.name!==loadedTextName){
+     alert('選択したファイル名が読み込んだ教材と異なります。\\n読み込んだファイル：'+loadedTextName+'\\n選択したファイル：'+h.name+'\\n\\n教材フォルダを選択したときに読み込まれたファイル名を確認してください。');
+     overwriteHandle=null;
+     return;
+   }
+   overwriteHandle=h;
+   document.getElementById('saveHelp').textContent='上書き対象：'+h.name+'。内容を確認して「上書き保存」を押してください。';
+ }catch(err){
+   if(err.name!=='AbortError')alert('ファイルを選択できませんでした：'+(err.message||err));
+ }
 });
 document.getElementById('overwriteBtn').addEventListener('click',async()=>{
  if(editingField) closeInlineEditor(true);
